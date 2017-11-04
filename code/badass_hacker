@@ -1,0 +1,100 @@
+#!/bin/bash
+
+# Try to change gnome-terminal profile colours based on rough keypress rate
+# jank_level = High
+# Response dynamics are magical and atrocious
+#     fast to start with, then /really/ damped
+#     I blame my usage of pv
+# there is also a horrible contrast period when green is coming up
+
+# bash profile to modify dynamically
+bprofile="d0c97590-ae8f-4a5e-b61f-a6a8c2dd8e1b"
+
+# This doesn't do what I hoped
+buffersize=10
+
+# This kinda sets the translation speed
+delay=0.01 # 0.1s seems OK
+
+# Green channel of text when bg is dark. Red and Blue always = 0
+greenMax=160
+
+# spawn a subshell to get keypresses using xinput.
+# the actual input # seems to move about
+(xinput test 10 | pv -lfa -s "$buffersize" > /dev/null 2> keylog.log) &
+
+# Init things for the Big Ol' Loop
+# 255 = white background
+# 0   = black background
+background=0
+backgroundLast=0
+bg=255
+fgG=0
+
+Rate=100 # 40
+Offset=1 # 2
+
+# Big Ol' Loop. We stay in here and update the background colour
+while true; do
+	typeRate=$(grep "[0-9]*\.[0-9]*" --only-matching keylog.log | tail -1)
+
+	# do math with python
+	# get blacker as we get faster
+	# magic number breakdown:
+	#     -2 is an attempt to compensate for the latency of typeRates
+	#     40 is a scaling factor
+	background=$(echo "print(255-min(255,int((float($typeRate)-$Offset)*$Rate)))" | python)
+	
+	# adjust background at the same rate
+	if [ $background -lt $backgroundLast ]
+	then
+		let bg-=1
+	fi
+	if [ $background -gt $backgroundLast ]
+	then
+		let bg+=1
+	fi
+
+	# Change the text colour if we get quite dark
+	if [ $bg -lt 40 ]
+	then
+	        let fgG+=1
+	elif [ $bg -lt 100 ]
+	then
+	        let fgG+=2
+	else
+	        let fgG-=1
+	fi
+
+	# Limit the allowable ranges
+	if [ $bg -gt 255 ]
+	then
+		let bg=255
+	fi
+	if [ $bg -lt 0 ]
+	then
+		let bg=0
+	fi
+
+	if [ $fgG -gt $greenMax ]
+	then
+		let fgG=$greenMax
+	fi
+	if [ $fgG -lt 0 ]
+	then
+		let fgG=0
+	fi
+
+	printf "Type Rate: % 10.2f\tBackground Target: % 10.2f\tBackground Current: % 10.2f\tForeground G: % 10.2f\n" "$typeRate" "$background" "$bg" "$fgG"
+
+	# write the background to gnome-shell profile
+	dconf write /org/gnome/terminal/legacy/profiles:/:"$bprofile"/background-color "'rgb($bg,$bg,$bg)'"
+
+	# write the foreground to gnome-shell profile
+	dconf write /org/gnome/terminal/legacy/profiles:/:"$bprofile"/foreground-color "'rgb(0,$fgG,0)'"
+
+	backgroundLast=$bg
+
+	sleep $delay
+
+done

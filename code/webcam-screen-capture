@@ -1,0 +1,103 @@
+#!/bin/bash
+
+# Takes a screen cap and/or a webcam snap when called
+# Uses a simple system of making / removing files to block capture
+
+BLOCK_BOTH="$HOME/bin/webcam_screen_capture.block"
+BLOCK_WEB="$HOME/bin/webcam_screen_capture.block_web"
+
+# Log a picture of the screen
+function screencap {
+        # needed for import to work:
+        export DISPLAY=:0.0
+        import -window root $FULL_PATH-screen.png
+}
+
+# Log a picture from the webcam
+function webcap {
+        streamer -f 'jpeg' -c '/dev/video0' -o $FULL_PATH-webcam -s '1280x720'
+        mv $FULL_PATH-webcam $FULL_PATH-webcam.jpg
+}
+
+# Display blocking state
+function showState {
+  if [ -f $BLOCK_BOTH ]; then
+    printf "Webcam logging is OFF\nScreen logging is OFF\n\n"
+  elif [ -f $BLOCK_WEB ]; then
+    printf "Webcam logging is OFF\nScreen logging is ON\n\n"
+  else
+    printf "Webcam logging is ON\nScreen logging is ON\n\n"
+  fi
+}
+
+FILE_LOC="$HOME/Pictures/Logs/$(date +%Y/%m/%d/)"
+mkdir -p $FILE_LOC # make directory if it does not already exist
+
+FILE_NAME=$(date +%T)
+FULL_PATH=$FILE_LOC$FILE_NAME
+
+# Handle argument
+key="$1" # get first argument
+case $key in
+    -b) # take both captures
+    echo "You selected both"
+    if [ -f $BLOCK_BOTH ]; then
+        # do nothing, blocked
+        echo "Blocked"
+    else
+        if [ -f $BLOCK_WEB ]; then
+                # Only capture screen
+                screencap
+        else
+                # free to capture both
+                webcap
+                screencap
+        fi
+    fi
+    ;;
+    -w) # take webcam capture only
+    echo "You selected webcam"
+    if [ -f $BLOCK_BOTH ] || [ -f $BLOCK_WEB ]; then
+        # do nothing, blocked
+        echo "Blocked"
+    else
+        webcap
+    fi
+    ;;
+    -s) # take screen capture only
+    echo "You selected screen"
+    if [ -f $BLOCK_BOTH ]; then
+        # do nothing, blocked
+        echo "Blocked"
+    else
+        screencap
+    fi
+    ;;
+    -e)
+    printf "\nTurning all logging on\n\n"
+    rm -f $BLOCK_BOTH $BLOCK_WEB
+    showState
+    ;;
+    -d)
+    printf "\nTurning webcam logging off\n\n"
+    touch $BLOCK_WEB
+    showState
+    ;;
+    -dd)
+    printf "\nTurning all logging off\n\n"
+    touch $BLOCK_BOTH
+    showState
+    ;;
+    *)
+    # default, do nothing
+    printf "\nUsage: webcam_screen_capture [OPTION]
+Controls image logging.\n
+  -b            Capture webcam and screen
+  -s            Capture screen only
+  -w            Capture webcam only
+  -e            Enable all logging
+  -d            Disable webcam logging
+  -dd           Disable all logging\n\n"
+    showState
+    ;;
+esac
